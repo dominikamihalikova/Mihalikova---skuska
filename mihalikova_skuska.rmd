@@ -1,0 +1,174 @@
+---
+title: "Dominika Mihaliková - skú¹ka"
+output:
+  html_document:
+    df_print: paged
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+```{r}
+library(tidyverse) 
+library(readr)  
+library(dplyr) # túto kni¾nicu vyu¾ijeme na vyselektovanie pre nás významných ståpcov tabuµky a ich zoradenie
+library(data.table) # túto kni¾nicu vyu¾ijeme na premenovanie ståpcov tabuµky
+library(car) # túto kni¾nicu vyu¾ijeme na Leveneov test homogenity rozptylov a na zostrojenie Q-Q plotu
+library(ggpubr) # túto kni¾nicu vyu¾ijeme na zostrojenie boxplotu
+library(FSA) # túto kni¾nicu vyu¾ijeme na Dunnov test viacnásobných porovnaní
+```
+
+Nami pou¾ité dáta hovoria o incidencii t.j. nových prípadoch rakoviny prsníka (na 10000 obyvateµov) v rôznych krajinách sveta a zároveò o mo¾ných vplyvoch na vznik rakoviny. Dáta naèítame z repozitáru na GitHub-e: 
+
+```{r}
+cancer.data <- read_csv("https://raw.githubusercontent.com/dominikamihalikova/Mihalikova---skuska/master/globalBreastCancerRisk.csv",col_names = TRUE)
+cols(
+  country = col_character(),
+  continent = col_character(),
+  year = col_integer(),
+  lifeExp = col_double(),
+  pop = col_integer(),
+  gdpPercap = col_double(),
+  NewCasesOfBreastCancerIn2002 = col_double(),
+  AlcoholComsumption = col_double(),
+  BloodPressure = col_double(),
+  BodyMassIndex = col_double(),
+  Cholestorol = col_double(),
+  Smoking = col_double())
+View(cancer.data)
+```
+
+Na¹im cieµom bude porovna» rozdielne kontinenty a zisti» èi je signifikantný rozdiel v incidencii (t.j. poète novodiagnostikovaných prípadov) rakoviny prsníka medzi Európou, Áziou, Amerikou a Afrikou. Na to nám v¹ak budú staèi» dáta v ståpcoch "continent" a "NewCasesOfBreastCancerIn2002". Tak¾e si z pôvodnej tabuµky vyselektujeme iba dané ståpce a riadky, ktoré si rovno aj premenujeme, aby sme mali dáta prehµadnej¹ie a aby sa nám µah¹ie pracovalo.
+
+```{r}
+cancer_incidence.data <- select(cancer.data, continent, NewCasesOfBreastCancerIn2002)
+cancer_incidence.data <- filter(cancer_incidence.data, continent != "Oceania")
+setnames(cancer_incidence.data, old=c("continent","NewCasesOfBreastCancerIn2002"), new=c("Kontinent", "Incidencia"))
+print(cancer_incidence.data)
+```
+
+Aby sme dáta e¹te viac sprehµadnili usporiadame si ich abecedne podµa názvu kontinentu: 
+
+```{r}
+arrange(cancer_incidence.data, Kontinent)
+```
+
+Najprv si nakreslíme boxplot grafy pre ka¾dý kontinent:
+
+```{r}
+ggplot(data = cancer_incidence.data) +
+  geom_boxplot(mapping = aes(x = Kontinent, y = Incidencia , color = Kontinent)) +
+  geom_jitter(mapping = aes(x = Kontinent, y = Incidencia, color = Kontinent))
+```
+
+Z grafu mô¾eme usudzova», ¾e incidencia v Európe je výrazne vy¹¹ia ako incidencia na ostatných kontinentoch. Na to aby sme si mohli overi» èi, a medzi ktorými kontinentmi, sú rozdiely v incidencii naozaj signifikantné musíme pou¾i» ¹tatistický test. 
+Na testovanie pou¾ijeme jednofaktorovú analýzu rozptylov (One-way ANOVA), ktorou zistíme èi je nejaký rozdiel v incidencii medzi kontinentmi. Ak budeme pozorova» signifikantné rozdiely, pou¾ijeme Tukeyho HSD metódu, ktorá nám uká¾e presne medzi ktorými kontinentmi je významný rozdiel v incidencii. Na to aby sme mohli pou¾i» dané testy musia v¹ak na¹e dáta spåòa» urèité podmienky: dáta musia by» normálne rozdelené a ich rozptyly musia by» rovnaké. Pri v¹etkých testoch budeme pracova» s hladinou významnosti alfa = 5 %. 
+
+Pomocou Leveneovho testu zistíme èi majú na¹e dáta homogénne rozptyly:
+
+```{r}
+cancer_incidence.data$Kontinent <- as.factor(cancer_incidence.data$Kontinent)
+```
+
+```{r}
+leveneTest(Incidencia~Kontinent, data = cancer_incidence.data)
+```
+
+Test ukázal, ¾e na hladine významnosti alfa = 5 % je rozdiel rozptylov signifikantný (p = 0.00058) a teda rozptyly nie sú homogénne.
+
+Na zistenie normality dát si najprv zostrojíme Q-Q (quantile-quantile) graf a následne pou¾ijeme Shapiro-Wilkov test, ktorým si potvrdíme výsledky z grafu.
+
+Q-Q graf:
+
+```{r}
+aggregate(Incidencia ~ Kontinent, FUN = qqPlot, data = cancer_incidence.data)
+```
+
+Z Q-Q grafov sa zdá, ¾e na¹e dáta nie sú normálne rozdelené, ale toto tvrdenie si e¹te overíme testom na normalitu - Shapiro-Wilkovým testom:
+
+```{r}
+africa.data <- filter(cancer_incidence.data, Kontinent == "Africa")
+america.data <- filter(cancer_incidence.data, Kontinent == "Americas")
+europa.data <- filter(cancer_incidence.data, Kontinent == "Europe")
+azia.data <- filter(cancer_incidence.data, Kontinent == "Asia")
+shapiro.test(africa.data$Incidencia)
+shapiro.test(america.data$Incidencia)
+shapiro.test(europa.data$Incidencia)
+shapiro.test(azia.data$Incidencia)
+```
+
+Shapiro-Wilkov test na normalitu dát nám ukázal, ¾e na hladine významnosti alfa = 5 % dáta incidencie v Afrike (p = 0.519) a v Európe (p = 0.077) mô¾eme pova¾ova» za normálne, av¹ak dáta v Amerika (p = 0.003) a v Ázii (p = 0.002) za normálne rozdelené pova¾ova» nemô¾eme. 
+
+
+Keï¾e v¹etky dáta nie sú normálne, skúsime na ne aplikova» logaritmickú transformáciu:
+
+```{r}
+log_transform.data <- cancer_incidence.data
+log_transform.data$Incidencia <- log(cancer_incidence.data$Incidencia)
+print(log_transform.data)
+```
+
+Transformované dáta si opä» zobrazíme na boxplote:
+
+```{r}
+ggplot(data = log_transform.data) +
+  geom_boxplot(mapping = aes(x = Kontinent, y = Incidencia , color = Kontinent)) +
+  geom_jitter(mapping = aes(x = Kontinent, y = Incidencia, color = Kontinent))
+```
+
+Aj na transformovaných dátach otestujeme homogenitu ich rozptylu a ich normalitu:
+
+```{r}
+log_transform.data$Kontinent <- as.factor(log_transform.data$Kontinent)
+```
+
+```{r}
+leveneTest(Incidencia ~ Kontinent, data = log_transform.data)
+```
+
+Test ukázal, ¾e na hladine významnosti alfa = 5 % rozdiel rozptylov nie je signifikantný (p = 0.104) a teda rozptyly mô¾eme pova¾ova» za homogénne. 
+
+Opä» si zostrojíme aj Q-Q graf:
+
+```{r}
+aggregate(Incidencia ~ Kontinent, FUN = qqPlot, data = log_transform.data)
+```
+
+Dáta sa opä» nezdajú by» normálne rozdelené, èo si e¹te overíme Shapiro-Wilkovým testom na normalitu:
+
+```{r}
+log_africa.data <- filter(log_transform.data, Kontinent == "Africa")
+log_america.data <- filter(log_transform.data, Kontinent == "Americas")
+log_europa.data <- filter(log_transform.data, Kontinent == "Europe")
+log_azia.data <- filter(log_transform.data, Kontinent == "Asia")
+shapiro.test(log_africa.data$Incidencia)
+shapiro.test(log_america.data$Incidencia)
+shapiro.test(log_europa.data$Incidencia)
+shapiro.test(log_azia.data$Incidencia)
+```
+
+Logaritmická transformácia nám síce pomohla k homogénnym rozptylom, av¹ak normalita dát sa nezmenila, práve naopak, po transformácii sú prvé tri skupiny nenormálne rozdelené, iba posledná sa javí by» normálne rozdelená.
+
+Keï¾e nám transformácia dát nepomohla k splneniu podmienok na pou¾itie jednofaktorovej ANOV-y, pou¾ijeme jej neparametrický ekvivalent a to Kruskall-Wallisov test, pri ktorom dáta nemusia spåòa» podmienky potrebné pre ANOV-u.
+
+Kruskal-Wallisov test pou¾ijeme, aby sme zistili èi sa medzi niektorými skupinami incidencie lí¹ia:
+
+```{r}
+kruskal.test(Incidencia ~ Kontinent, data = cancer_incidence.data)
+```
+
+Kruskal-Wallisov test na analýzu variancie nám ukázal, ¾e (na hladine významnosti alfa = 0.05) je medzi skupinami signifikantný rozdiel (p = 6.185e-13) v ich incidencii a teda zamietame nulovú hypotézu, ¾e incidencia rakoviny prsníka je na v¹etkých kontinentoch rovnaká. Na to, aby sme zistili presne medzi ktorými skupinami, t.j. kontinentmi je rozdielna incidencia rakoviny prsníka vykonáme Dunnov test na viacnásobné porovnania.
+
+```{r}
+dunnTest(Incidencia ~ Kontinent, data = cancer_incidence.data)
+```
+
+
+Z Dunnovho testu na viacnásobné porovnania vyplýva, ¾e významné rozdiely v incidencii rakoviny prsníka v roku 2002 boli pozorované medzi viacerými kontinentmi. Incidencia v Európe sa signifikantne lí¹ila od incidencie v Afrike (p = 2.11e-13), Amerike (p = 0.0048) aj Ázii (p = 5.93e-6). Výrazný rozdiel v incidencii sme pozorovali aj medzi Afrikou a Amerikou (p = 0.0007). V prípade dvojíc Afrika - Ázia (p = 0.07) a Amerika - Ázia (p = 0.12) nepozorujeme významný rozdiel a teda nemô¾eme zamietnu» nulovú hypotézu, ktorá hovorí, ¾e incidencia na týchto kontinentoch je rovnaká. Pracovali sme na hladine významnosti alfa = 5 %. 
+
+
+
+
+
+
+
+
